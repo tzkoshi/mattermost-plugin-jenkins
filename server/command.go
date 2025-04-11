@@ -182,34 +182,9 @@ func (p *Plugin) ExecuteCommand(c *plugin.Context, args *model.CommandArgs) (*mo
 			return p.getCommandResponse(args, "Your Jenkins account has been successfully connected to Mattermost."), nil
 		}
 	case "build":
-		if len(parameters) == 0 {
-			return p.getCommandResponse(args, jobNotSpecifiedResponse), nil
-		} else if len(parameters) >= 1 {
-			jobName, extraParam, ok := parseBuildParameters(parameters)
-			if !ok || extraParam != "" {
-				return p.getCommandResponse(args, "Please check `/jenkins help` to find help on how to get trigger a job."), nil
-			}
-
-			hasParameters, paramErr := p.checkIfJobAcceptsParameters(args.UserId, jobName)
-			if paramErr != nil {
-				p.API.LogError("Error checking for parameters", "err", paramErr.Error())
-				return p.getCommandResponse(args, fmt.Sprintf("Error triggering build for the job '%s'.", jobName)), nil
-			}
-
-			if hasParameters {
-				err := p.createDialogForParameters(args.UserId, args.TriggerId, jobName, args.ChannelId)
-				if err != nil {
-					p.API.LogError("Error creating dialog", "err", err.Error())
-					return p.getCommandResponse(args, fmt.Sprintf("Error triggering build for the job '%s'.", jobName)), nil
-				}
-			} else {
-				build, err := p.triggerJenkinsJob(args.UserId, args.ChannelId, jobName, nil)
-				if err != nil {
-					p.API.LogError("Error triggering build", "job_name", jobName, "err", err.Error())
-					return p.getCommandResponse(args, fmt.Sprintf("Error triggering build for the job '%s'.", jobName)), nil
-				}
-				p.createPost(args.UserId, args.ChannelId, fmt.Sprintf("Job '%s' - #%d has been started\nBuild URL : %s", jobName, build.GetBuildNumber(), build.GetUrl()))
-			}
+		response, appError, done := p.executeBuildCommand(parameters, args)
+		if done {
+			return response, appError
 		}
 	case "get-artifacts":
 		if len(parameters) == 0 {
@@ -392,4 +367,37 @@ func (p *Plugin) ExecuteCommand(c *plugin.Context, args *model.CommandArgs) (*mo
 		return p.getCommandResponse(args, text), nil
 	}
 	return &model.CommandResponse{}, nil
+}
+
+func (p *Plugin) executeBuildCommand(parameters []string, args *model.CommandArgs) (*model.CommandResponse, *model.AppError, bool) {
+	if len(parameters) == 0 {
+		return p.getCommandResponse(args, jobNotSpecifiedResponse), nil, true
+	} else if len(parameters) >= 1 {
+		jobName, extraParam, ok := parseBuildParameters(parameters)
+		if !ok || extraParam != "" {
+			return p.getCommandResponse(args, "Please check `/jenkins help` to find help on how to get trigger a job."), nil, true
+		}
+
+		hasParameters, paramErr := p.checkIfJobAcceptsParameters(args.UserId, jobName)
+		if paramErr != nil {
+			p.API.LogError("Error checking for parameters", "err", paramErr.Error())
+			return p.getCommandResponse(args, fmt.Sprintf("Error triggering build for the job '%s'.", jobName)), nil, true
+		}
+
+		if hasParameters {
+			err := p.createDialogForParameters(args.UserId, args.TriggerId, jobName, args.ChannelId)
+			if err != nil {
+				p.API.LogError("Error creating dialog", "err", err.Error())
+				return p.getCommandResponse(args, fmt.Sprintf("Error triggering build for the job '%s'.", jobName)), nil, true
+			}
+		} else {
+			build, err := p.triggerJenkinsJob(args.UserId, args.ChannelId, jobName, nil)
+			if err != nil {
+				p.API.LogError("Error triggering build", "job_name", jobName, "err", err.Error())
+				return p.getCommandResponse(args, fmt.Sprintf("Error triggering build for the job '%s'.", jobName)), nil, true
+			}
+			p.createPost(args.UserId, args.ChannelId, fmt.Sprintf("Job '%s' - #%d has been started\nBuild URL : %s", jobName, build.GetBuildNumber(), build.GetUrl()))
+		}
+	}
+	return nil, nil, false
 }
