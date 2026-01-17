@@ -392,12 +392,16 @@ func (p *Plugin) executeBuildCommand(parameters []string, args *model.CommandArg
 				return p.getCommandResponse(args, fmt.Sprintf("Error triggering build for the job '%s'.", jobName)), nil, true
 			}
 		} else {
-			build, err := p.triggerJenkinsJob(args.UserId, args.ChannelId, jobName, params)
-			if err != nil {
-				p.API.LogError("Error triggering build", "job_name", jobName, "err", err.Error())
-				return p.getCommandResponse(args, fmt.Sprintf("Error triggering build for the job '%s'.", jobName)), nil, true
-			}
-			p.createPost(args.UserId, args.ChannelId, fmt.Sprintf("Job '%s' - #%d has been started\nBuild URL : %s", jobName, build.GetBuildNumber(), build.GetUrl()))
+			go func(job string, parameters map[string]string, userID, channelID string) {
+				build, err := p.triggerJenkinsJob(userID, channelID, job, parameters)
+				if err != nil {
+					p.API.LogError("Error triggering build", "job_name", job, "err", err.Error())
+					p.createPost(userID, channelID, fmt.Sprintf("Error triggering build for the job '%s'.", job))
+					return
+				}
+				p.createPost(userID, channelID, fmt.Sprintf("Job '%s' - #%d has been started\nBuild URL : %s", job, build.GetBuildNumber(), build.GetUrl()))
+			}(jobName, params, args.UserId, args.ChannelId)
+			return p.getCommandResponse(args, "Build triggered; check channel for updates."), nil, true
 		}
 	}
 	return nil, nil, false
